@@ -53,3 +53,34 @@ done
 
 echo "Archivos descomprimidos correctamente en: $ruta_destino"
 
+echo ""
+echo "Organizando archivos por tipo de extensión..."
+
+# Buscamos solo los archivos que están en el directorio destino (nivel superior)
+find "$ruta_destino" -maxdepth 1 -type f | while read -r archivo; do
+
+    # Extraer el nombre base del archivo
+    nombre_archivo=$(basename "$archivo")
+
+    # Extraer la extensión del archivo
+    extension="${nombre_archivo##*.}"
+
+    # Convertir la extensión a minúsculas
+    extension=$(echo "$extension" | tr '[:upper:]' '[:lower:]')
+
+    # Determinar la subcarpeta
+    if [ "$extension" = "$nombre_archivo" ]; then
+        subcarpeta="otros"
+    else
+        subcarpeta="$extension"
+    fi
+
+    # Crear la subcarpeta si no existe
+    mkdir -p "$ruta_destino/$subcarpeta"
+
+    # Mover el archivo a su carpeta correspondiente
+    mv "$archivo" "$ruta_destino/$subcarpeta/"
+
+done
+
+echo "Organización por carpetas completada."
