@@ -1,86 +1,136 @@
-
 #!/bin/bash
 
-# Verificar que se reciban exactamente dos argumentos
+# ==============================================================================
+# FASE 1: VERIFICACIÓN, DESCOMPRESIÓN Y ORGANIZACIÓN
+# ==============================================================================
+
+# Verificar argumentos
 if [ "$#" -ne 2 ]; then
     echo "Error: se requieren exactamente 2 argumentos."
     echo "Uso: $0 <ruta_carpeta_zip> <ruta_destino>"
     exit 1
 fi
 
-# Guardar los argumentos
 ruta_zip="$1"
 ruta_destino="$2"
 
-# Verificar que la carpeta de origen exista
 if [ ! -d "$ruta_zip" ]; then
     echo "Error: la carpeta de origen no existe: $ruta_zip"
     exit 1
 fi
 
-# Buscar archivos ZIP dentro de la carpeta de origen
 archivos_zip=("$ruta_zip"/*.zip)
 
-# Verificar que exista al menos un ZIP
 if [ ! -f "${archivos_zip[0]}" ]; then
     echo "Error: no se encontró ningún archivo ZIP en: $ruta_zip"
     exit 1
 fi
 
-# Verificar que la carpeta destino exista
 if [ ! -d "$ruta_destino" ]; then
     echo "Error: la carpeta destino no existe: $ruta_destino"
     exit 1
 fi
 
-# Procesar cada archivo ZIP
+# Descomprimir los archivos ZIP
 for archivo_zip in "${archivos_zip[@]}"; do
-
-    # Verificar que el ZIP sea válido
     if ! unzip -t "$archivo_zip" > /dev/null 2>&1; then
         echo "Error: el archivo no es un ZIP válido: $archivo_zip"
         exit 1
     fi
 
-    # Extraer directamente los archivos y excluir __MACOSX
-    if ! unzip -o -j "$archivo_zip" -d "$ruta_destino" \
-        -x "__MACOSX/*" "*/__MACOSX/*"; then
+    if ! unzip -o -j "$archivo_zip" -d "$ruta_destino" -x "__MACOSX/*" "*/__MACOSX/*"; then
         echo "Error: no se pudo descomprimir: $archivo_zip"
         exit 1
     fi
-
 done
 
 echo "Archivos descomprimidos correctamente en: $ruta_destino"
-
 echo ""
 echo "Organizando archivos por tipo de extensión..."
 
-# Buscamos solo los archivos que están en el directorio destino (nivel superior)
+# Bucle de organización por extensión
 find "$ruta_destino" -maxdepth 1 -type f | while read -r archivo; do
-
-    # Extraer el nombre base del archivo
     nombre_archivo=$(basename "$archivo")
-
-    # Extraer la extensión del archivo
     extension="${nombre_archivo##*.}"
-
-    # Convertir la extensión a minúsculas
     extension=$(echo "$extension" | tr '[:upper:]' '[:lower:]')
 
-    # Determinar la subcarpeta
     if [ "$extension" = "$nombre_archivo" ]; then
         subcarpeta="otros"
     else
         subcarpeta="$extension"
     fi
 
-    # Crear la subcarpeta si no existe
     mkdir -p "$ruta_destino/$subcarpeta"
-
-    # Mover el archivo a su carpeta correspondiente
     mv "$archivo" "$ruta_destino/$subcarpeta/"
-
 done
 
 echo "Organización por carpetas completada."
+echo ""
+
+# ==============================================================================
+# FASE 2: AUDITORÍA Y FILTRADO LOCAL (PYSIDE6)
+# ==============================================================================
+
+DIRECTORIO="$ruta_destino"
+NOMBRE_CARPETA_DESTINO="archivos_pyside6"
+TERMINOS_REGEX="import PySide6|PySide6"
+TERMINO_REPORT="PySide6"
+
+total_archivos=0
+archivos_con_pyside6=0
+
+echo "================================================================="
+echo "    INFORME DE AUDITORÍA Y FILTRADO LOCAL (PYSIDE6) EN TERMINAL"
+echo "================================================================="
+echo ""
+
+while IFS= read -r archivo; do
+
+    if [[ "$archivo" == *"/$NOMBRE_CARPETA_DESTINO/"* ]]; then
+        continue
+    fi
+
+    ((total_archivos++))
+    echo "Archivo: $archivo"
+
+    coincidencias=$(grep -i -n -E "$TERMINOS_REGEX" "$archivo")
+
+    if [ -n "$coincidencias" ]; then
+
+        ((archivos_con_pyside6++))
+        terminos_encontrados=$(grep -i -o -E "$TERMINOS_REGEX" "$archivo" | sort -u | paste -sd ", " -)
+
+        echo "  Contiene '$TERMINO_REPORT': SÍ (Términos detectados: $terminos_encontrados)"
+        echo "  Coincidencias encontradas:"
+
+        echo "$coincidencias" | while IFS= read -r linea; do
+            echo "    - Línea $linea"
+        done
+
+        dir_origen=$(dirname "$archivo")
+        carpeta_destino_local="$dir_origen/$NOMBRE_CARPETA_DESTINO"
+
+        mkdir -p "$carpeta_destino_local"
+
+        nombre_base=$(basename "$archivo")
+        destino_final="$carpeta_destino_local/$nombre_base"
+
+        cp "$archivo" "$destino_final"
+        echo "  Copiado localmente a: $destino_final"
+
+    else
+        echo "  Contiene '$TERMINO_REPORT': NO"
+    fi
+
+    echo "-----------------------------------------------------------------"
+
+done < <(find "$DIRECTORIO" -type f -name "*.py")
+
+echo ""
+echo "================================================================="
+echo "                    RESUMEN FINAL"
+echo "================================================================="
+echo "Total de archivos .py analizados: $total_archivos"
+echo "Archivos que utilizan la librería '$TERMINO_REPORT': $archivos_con_pyside6"
+echo "Organización: Las copias filtradas fueron creadas dentro de la subcarpeta '$NOMBRE_CARPETA_DESTINO' en sus respectivas ubicaciones."
+echo "================================================================="
